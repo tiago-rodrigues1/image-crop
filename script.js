@@ -1,25 +1,39 @@
-const photoFileBtn = document.getElementById("photo-file");
-let image = document.getElementById("photo-preview");
+const photoFile = document.getElementById("photo-file");
+let photoPreview = document.getElementById("photo-preview");
+let image, photoName;
 
-document.getElementById("select-image").onclick = () => {
-	photoFileBtn.click();
+// Select & Preview image
+document.getElementById("select-image").onclick = function () {
+	photoFile.click();
 };
 
 window.addEventListener("DOMContentLoaded", () => {
-	photoFileBtn.addEventListener("change", () => {
-		let file = photoFileBtn.files.item(0);
+	photoFile.addEventListener("change", () => {
+		let file = photoFile.files.item(0);
+		photoName = file.name;
 
+		// ler um arquivo
 		let reader = new FileReader();
 		reader.readAsDataURL(file);
-		reader.onload = (event) => {
+		reader.onload = function (event) {
+			image = new Image();
 			image.src = event.target.result;
+			image.onload = onLoadImage;
 		};
 	});
 });
 
+// Selection tool
 const selection = document.getElementById("selection-tool");
-let startX, startY, relativeStartX, relativeStartY;
-let endX, endY, relativeEndX, relativeEndY;
+
+let startX,
+	startY,
+	relativeStartX,
+	relativeStartY,
+	endX,
+	endY,
+	relativeEndX,
+	relativeEndY;
 let startSelection = false;
 
 const events = {
@@ -28,20 +42,21 @@ const events = {
 	},
 	mousedown() {
 		const { clientX, clientY, offsetX, offsetY } = window.event;
+
 		startX = clientX;
 		startY = clientY;
 		relativeStartX = offsetX;
-		relativeStartY = clientY;
+		relativeStartY = offsetY;
 
 		startSelection = true;
 	},
 	mousemove() {
-		const { clientX, clientY } = window.event;
-		endX = clientX;
-		endY = clientY;
+		endX = window.event.clientX;
+		endY = window.event.clientY;
 
 		if (startSelection) {
 			selection.style.display = "initial";
+
 			selection.style.top = `${startY}px`;
 			selection.style.left = `${startX}px`;
 
@@ -54,9 +69,93 @@ const events = {
 
 		relativeEndX = window.event.layerX;
 		relativeEndY = window.event.layerY;
+
+		// mostrar o botão de corte
+		cropButton.style.display = "initial";
 	},
 };
 
 Object.keys(events).forEach((eventName) => {
-	image.addEventListener(eventName, events[eventName]);
+	photoPreview.addEventListener(eventName, events[eventName]);
 });
+
+// Canvas
+let canvas = document.createElement("canvas");
+let ctx = canvas.getContext("2d");
+
+function onLoadImage() {
+	const { width, height } = image;
+	canvas.width = width;
+	canvas.height = height;
+
+	// limpar o contexto
+	ctx.clearRect(0, 0, width, height);
+
+	// desenhar a imagem no contexto
+	ctx.drawImage(image, 0, 0);
+
+	photoPreview.src = canvas.toDataURL();
+}
+
+// Cortar imagem
+const cropButton = document.getElementById("crop-image");
+cropButton.onclick = () => {
+	const { width: imgW, height: imgH } = image;
+	const { width: previewW, height: previewH } = photoPreview;
+
+	const [widthFactor, heightFactor] = [
+		Number(imgW / previewW),
+		Number(imgH / previewH),
+	];
+
+	const [selectionWidth, selectionHeight] = [
+		Number(selection.style.width.replace("px", "")),
+		Number(selection.style.height.replace("px", "")),
+	];
+
+	const [croppedWidth, croppedHeight] = [
+		Number(selectionWidth * widthFactor),
+		Number(selectionHeight * heightFactor),
+	];
+
+	const [actualX, actualY] = [
+		Number(relativeStartX * widthFactor),
+		Number(relativeStartY * heightFactor),
+	];
+
+	// pegar do ctx a imagem cortada
+	const croppedImage = ctx.getImageData(
+		actualX,
+		actualY,
+		croppedWidth,
+		croppedHeight
+	);
+
+	// limpar o ctx
+	ctx.clearRect(0, 0, ctx.width, ctx.height);
+
+	// ajuste de proporções
+	image.width = canvas.width = croppedWidth;
+	image.height = canvas.height = croppedHeight;
+
+	// adicionar a imagem cortada ao ctx
+	ctx.putImageData(croppedImage, 0, 0);
+
+	// esconder a ferramenta de seleção
+	selection.style.display = "none";
+
+	// atualizar o preview da imagem
+	photoPreview.src = canvas.toDataURL();
+
+	// mostrar o botão de download
+	downloadButton.style.display = "initial";
+};
+
+// Download
+const downloadButton = document.getElementById("download");
+downloadButton.onclick = function () {
+	const a = document.createElement("a");
+	a.download = photoName + "-cropped.png";
+	a.href = canvas.toDataURL();
+	a.click();
+};
